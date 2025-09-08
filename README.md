@@ -4,25 +4,25 @@
 [![Version](https://img.shields.io/badge/version-0.4.0-green)](https://github.com/vedur-is/gps_parser)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Enhanced GPS configuration management package for Veurstofan Õslands (Icelandic Met Office) GPS processing ecosystem. Provides centralized configuration parsing and management for GPS stations, processing parameters, and system paths.
+Enhanced GPS configuration management package for Ve√∞urstofan √çslands (Icelandic Met Office) GPS processing ecosystem. Provides centralized configuration parsing and management for GPS stations, processing parameters, and system paths.
 
-## =Ä Features
+## Features
 
-### ( Enhanced in v0.4.0
-- **<Ø Station Timeout Categories**: Configure connection timeouts based on station type (fixed_wired, mobile, very_remote)
-- **= FTP Mode Detection**: Automatic FTP mode determination based on IP ranges or explicit configuration
-- **ô Session Management**: Configurable session types with receiver paths and logging settings
-- **=¬ System Paths**: Centralized tool path management (RxTools, processing tools, data directories)
-- **=' CLI Defaults**: Configurable default values for command-line applications
-- ** Configuration Validation**: Comprehensive validation and error reporting
+### Enhanced in v0.4.0
+- **Station Timeout Categories**: Configure connection timeouts based on station type (fixed_wired, mobile, very_remote)
+- **FTP Mode Detection**: Automatic FTP mode determination based on IP ranges or explicit configuration
+- **Session Management**: Configurable session types with receiver paths and logging settings
+- **System Paths**: Centralized tool path management (RxTools, processing tools, data directories)
+- **CLI Defaults**: Configurable default values for command-line applications
+- **Configuration Validation**: Comprehensive validation and error reporting
 
-### <◊ Core Features
-- **=' XDG Compliance**: Standard configuration directory (`~/.config/gpsconfig/`)
-- **=À Extended Interpolation**: Variable substitution and path expansion support
-- **= Backward Compatibility**: Legacy configuration support maintained
-- **=‡ Easy Setup**: Automated configuration deployment script
+### Core Features
+- **XDG Compliance**: Standard configuration directory (`~/.config/gpsconfig/`)
+- **Extended Interpolation**: Variable substitution and path expansion support
+- **Backward Compatibility**: Legacy configuration support maintained
+- **Easy Setup**: Automated configuration deployment script
 
-## =Ê Installation
+## Installation
 
 ```bash
 # Install package
@@ -36,7 +36,7 @@ cd gps_parser
 pip install gps_parser[dev]
 ```
 
-## =Ä Quick Start
+## Quick Start
 
 ### Basic Usage
 
@@ -46,23 +46,25 @@ import gps_parser
 # Initialize configuration parser
 parser = gps_parser.ConfigParser()
 
-# Get station information (legacy API)
-eldc_info = parser.getStationInfo('ELDC')
-print(eldc_info)
+# Get station information
+station_info = parser.getStationInfo('ELDC')
+print(f"Station: {station_info['station']['station_name']}")
+print(f"Router IP: {station_info['station']['router_ip']}")
 
-# Get station timeout configuration (v0.4.0)
+# Get timeout configuration
 timeout_config = parser.getStationTimeout('ELDC')
-print(f"Connection timeout: {timeout_config['connection_timeout']}s")
+print(f"Connection timeout: {timeout_config['connection_timeout']} seconds")
+print(f"Inactivity timeout: {timeout_config['inactivity_timeout']} seconds")
 
-# Determine FTP mode for station (v0.4.0)
+# Get FTP mode
 ftp_mode = parser.getStationFtpMode('ELDC', '10.6.1.90')
 print(f"FTP mode: {ftp_mode}")
 
-# Get system tool path (v0.4.0)
+# Get system paths
 bin2asc_path = parser.getSystemPath('bin2asc_path')
-print(f"RxTools bin2asc: {bin2asc_path}")
+print(f"bin2asc tool: {bin2asc_path}")
 
-# Get CLI default values (v0.4.0)
+# Get default values
 default_session = parser.getDefaultValue('default_session')
 print(f"Default session: {default_session}")
 ```
@@ -72,16 +74,17 @@ print(f"Default session: {default_session}")
 ```python
 # Validate station configuration
 validation = parser.validateStationConfig('ELDC')
+
 if validation['valid']:
-    print(" Station configuration is valid")
+    print("Station configuration is valid")
 else:
-    print("L Configuration errors:")
+    print("Configuration errors:")
     for error in validation['errors']:
         print(f"  - {error}")
 
 # Check for warnings
 if validation['warnings']:
-    print("†  Configuration warnings:")
+    print("Configuration warnings:")
     for warning in validation['warnings']:
         print(f"  - {warning}")
 ```
@@ -96,7 +99,7 @@ print(f"Session path: {session_config['session_path']}")
 print(f"Receiver path: {session_config['receiver_path']}")
 ```
 
-## =À Configuration Schema
+## Configuration Schema
 
 ### stations.cfg - Enhanced Station Configuration
 
@@ -106,23 +109,22 @@ print(f"Receiver path: {session_config['receiver_path']}")
 router_ip = 10.6.1.90
 receiver_type = PolaRX5
 receiver_ftpport = 2160
-timeout_category = mobile           # NEW: timeout category
-ftp_mode = passive                 # NEW: explicit FTP mode
-connection_timeout = 25            # NEW: optional timeout override
+timeout_category = extended_network
+ftp_mode = passive
 
-# Global timeout categories (NEW)
+# Global timeout categories
 [TIMEOUT_CATEGORIES]
-fixed_wired = 10,30,180,8192      # connection,inactivity,progress,min_speed
+fixed_wired = 10,30,180,8192
 mobile = 20,60,300,2048
 very_remote = 30,120,600,1024
 
-# Network-based FTP mode rules (NEW)
+# Network-based FTP mode rules
 [NETWORK_RULES]
-ip_range_10_4 = active            # Internal IMO network
-ip_range_10_6 = passive           # Extended network
-domain_default = auto             # Domain-based stations
+ip_range_10_4 = active
+ip_range_10_6 = passive
+domain_default = auto
 
-# Session type configuration (NEW)
+# Session type mappings
 [SESSIONS]
 15s_24hr = a,LOG1_15s_24hr,/DSK1/SSN/
 1Hz_1hr = b,LOG2_1Hz_1hr,/DSK1/SSN/
@@ -132,83 +134,57 @@ status_1hr = b,LOG5_status_1hr,/DSK1/SSN/
 ### postprocess.cfg - System Configuration
 
 ```ini
-# System tool paths (NEW)
+# System tool paths
 [PATHS]
-bin2asc_path = /opt/rxtools/bin/bin2asc
 sbf2rin_path = /home/gpsops/bin/sbf2rin
 teqc_path = /home/gpsops/bin/teqc
+bin2asc_path = /opt/rxtools/bin/bin2asc
 data_prepath = /data/
 receiver_base_path = /DSK1/SSN/
 
-# CLI default values (NEW)
+# Default values for CLI applications
 [DEFAULTS]
 default_days_back = 10
 default_session = 15s_24hr
 default_compression = .gz
 health_extraction_pattern = *.sbf*
 ftp_connection_retries = 3
-
-# Legacy configuration (maintained)
-[Configs]
-figDir = /home/bgo/gamit-times/figures/
-totPath = /mnt/gpsdata/
-# ... other legacy settings
 ```
 
-## =' API Reference
+## API Reference
 
 ### Enhanced Methods (v0.4.0)
 
 #### `getStationTimeout(station_id: str) -> Dict[str, int]`
 Get timeout configuration based on station's timeout category.
 
-**Returns:**
-```python
-{
-    'connection_timeout': 20,      # seconds
-    'inactivity_timeout': 60,      # seconds  
-    'progress_timeout': 300,       # seconds
-    'min_speed_threshold': 2048    # bytes/sec
-}
-```
-
 #### `getStationFtpMode(station_id: str, router_ip: str) -> str`
-Determine FTP mode based on explicit config or network rules.
-
-**Returns:** `'active'`, `'passive'`, or `'auto'`
+Determine FTP mode using explicit config or network rules.
 
 #### `getSessionConfig(session_type: str) -> Dict[str, str]`
-Get session configuration for data collection types.
-
-**Parameters:**
-- `session_type`: `'15s_24hr'`, `'1Hz_1hr'`, `'status_1hr'`
+Get session configuration (letter, paths) for receiver data types.
 
 #### `getSystemPath(path_name: str) -> str`
-Get system tool paths with environment expansion.
-
-**Common paths:**
-- `'bin2asc_path'` - RxTools bin2asc tool
-- `'sbf2rin_path'` - SBF to RINEX converter
-- `'data_prepath'` - Data storage directory
+Get system tool paths with environment variable expansion.
 
 #### `getDefaultValue(setting_name: str) -> Union[str, int, float]`
-Get configurable default values for applications.
+Get default values for CLI applications with type conversion.
 
 #### `validateStationConfig(station_id: str) -> Dict[str, Any]`
-Comprehensive station configuration validation.
+Validate station configuration completeness and correctness.
 
-### Legacy Methods (maintained)
+### Core Methods
 
-#### `getStationInfo(station_id: str) -> Dict[str, Any]`
+#### `getStationInfo(station_id: str = "") -> Union[List[str], Dict[str, Dict]]`
 Get complete station information dictionary.
 
-#### `get_config(section: str, option: str) -> str`  
+#### `get_config(section: str, option: str) -> str`
 Get specific configuration value.
 
 #### `getPostProcessDir(option: str) -> str`
 Get postprocess directory paths.
 
-## <◊ Integration Examples
+## Integration Examples
 
 ### For receivers Package
 
@@ -219,45 +195,30 @@ def get_station_config(station_id: str):
     """Replace hardcoded station configuration with gps_parser calls."""
     parser = ConfigParser()
     
-    # Get basic station info
-    station_info = parser.getStationInfo(station_id)
-    if not station_info:
-        return None
-        
-    station_data = station_info['station']
-    
-    # Get enhanced configuration
+    # Get timeout configuration
     timeout_config = parser.getStationTimeout(station_id)
-    ftp_mode = parser.getStationFtpMode(station_id, station_data['router_ip'])
     
-    # Build unified configuration
+    # Get FTP mode
+    station_info = parser.getStationInfo(station_id)
+    router_ip = station_info['station']['router_ip']
+    ftp_mode = parser.getStationFtpMode(station_id, router_ip)
+    
+    # Get system paths
+    bin2asc_path = parser.getSystemPath('bin2asc_path')
+    
     return {
-        'router': {'ip': station_data['router_ip']},
-        'receiver': {
-            'ftpport': int(station_data['receiver_ftpport']),
-            'ftp_mode': ftp_mode,
-            'type': station_data['receiver_type']
-        },
         'timeouts': timeout_config,
-        'station': {
-            'id': station_id.upper(),
-            'router_type': station_data.get('router_type'),
-            'connection_type': station_data.get('connection_type')
-        }
+        'ftp_mode': ftp_mode,
+        'bin2asc_path': bin2asc_path
     }
-```
 
-### For Health Monitoring
-
-```python
-def setup_health_extraction():
-    """Configure health monitoring with gps_parser defaults."""
+def get_health_config():
+    """Get health monitoring configuration."""
     parser = ConfigParser()
     
-    # Get configurable paths and settings
-    bin2asc_path = parser.getSystemPath('bin2asc_path')
     pattern = parser.getDefaultValue('health_extraction_pattern')
     output_formats = parser.getDefaultValue('health_output_formats')
+    bin2asc_path = parser.getSystemPath('bin2asc_path')
     
     return {
         'bin2asc_path': bin2asc_path,
@@ -266,44 +227,35 @@ def setup_health_extraction():
     }
 ```
 
-## =Ä Migration Guide
+## Migration Guide
 
 ### From Hardcoded Configuration
 
 **Before (hardcoded):**
 ```python
-# L Hardcoded values in application
+# Hardcoded values in application
 TIMEOUT_VALUES = {
     'ELDC': (20, 60, 300, 2048),
-    'THOB': (10, 30, 180, 8192),
-    # ... 60+ stations
+    'TEST': (10, 30, 180, 8192)
 }
-```
 
-**After (config-based):**
-```python
-#  Configuration-driven approach
-parser = ConfigParser()
-timeout_config = parser.getStationTimeout(station_id)
-```
-
-### From getSeptentrio2 Station Lists
-
-**Before:**
-```python
-# L Hardcoded passive mode stations
-passive_mode_stations = {'ROTH', 'SVIN', 'SVIE', ...}
-pasv = station_id in passive_mode_stations
+# Hardcoded FTP mode detection
+def get_ftp_mode(router_ip):
+    if router_ip.startswith('10.4.'):
+        return 'active'
+    elif router_ip.startswith('10.6.'):
+        return 'passive'
+    return 'auto'
 ```
 
 **After:**
 ```python
-#  Rule-based FTP mode determination  
+# Rule-based FTP mode determination
 ftp_mode = parser.getStationFtpMode(station_id, router_ip)
 pasv = (ftp_mode == 'passive')
 ```
 
-## >Í Testing
+## Testing
 
 ```bash
 # Run package tests
@@ -312,16 +264,16 @@ pytest tests/ -v
 # Test with coverage
 pytest tests/ --cov=gps_parser --cov-report=html
 
-# Test configuration parsing
+# Basic functionality test
 python -c "
 import gps_parser
 parser = gps_parser.ConfigParser()
-print(' Configuration parsing works')
+print('Configuration parsing works')
 print(f'ELDC timeout: {parser.getStationTimeout(\"ELDC\")}')
 "
 ```
 
-## =¡ Configuration Directory
+## Configuration Directory
 
 ### Default Location
 - **Linux/macOS**: `~/.config/gpsconfig/`
@@ -330,31 +282,22 @@ print(f'ELDC timeout: {parser.getStationTimeout(\"ELDC\")}')
 ### Structure
 ```
 ~/.config/gpsconfig/
-   stations.cfg          # Station metadata and operational parameters
-   postprocess.cfg       # System paths and processing configuration
-   stations.cfg.backup.* # Automatic backups (created by setup script)
-   postprocess.cfg.backup.*
+‚îú‚îÄ‚îÄ stations.cfg      # Station definitions and rules
+‚îî‚îÄ‚îÄ postprocess.cfg   # System paths and defaults
 ```
 
-## =' Development
-
-### Setup Development Environment
-
+### Setup
 ```bash
-# Clone repository
-git clone https://github.com/vedur-is/gps_parser.git
-cd gps_parser
+# Automated setup
+./scripts/setup-config.sh
 
-# Install with development dependencies
-pip install -e .[dev]
-
-# Run tests
-pytest tests/ -v
-
-# Code formatting
-black src/ tests/
-ruff check src/ tests/
+# Manual setup
+mkdir -p ~/.config/gpsconfig/
+cp data/stations.cfg ~/.config/gpsconfig/
+cp data/postprocess.cfg ~/.config/gpsconfig/
 ```
+
+## Development
 
 ### Adding New Configuration
 
@@ -364,29 +307,29 @@ ruff check src/ tests/
 4. **Update documentation** in README.md and CLAUDE.md
 5. **Version bump** in pyproject.toml
 
-## > Integration Ecosystem
+## Integration Ecosystem
 
-Part of the GPS processing ecosystem at Veurstofan Õslands:
+Part of the GPS processing ecosystem at Ve√∞urstofan √çslands:
 
-- **= receivers**: GPS receiver data management (primary consumer)
-- **=  tostools**: TOS API integration and operational data
-- ** gtimes**: GPS time processing utilities
-- **=» geo_dataread**: GPS data analysis and processing
+- **receivers**: GPS receiver data management (primary consumer)
+- **tostools**: TOS API integration and operational data
+- **gtimes**: GPS time processing utilities
+- **geo_dataread**: GPS data analysis and processing
 
-## =ƒ License
+## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
-## =e Authors
+## Authors
 
-- **Benedikt Gunnar ”feigsson** - *Lead Developer* - bgo@vedur.is
+- **Benedikt Gunnar √ìfeigsson** - *Lead Developer* - bgo@vedur.is
 - **Maria Fernanda Gonzalez** - *Co-Developer* - mariagr@vedur.is
 
-## <‚ Organization
+## Organization
 
-**Veurstofan Õslands** (Icelandic Meteorological Office)  
+**Ve√∞urstofan √çslands** (Icelandic Meteorological Office)  
 GPS Processing and Geodynamics Department
 
 ---
 
-**=Ä Enhanced Configuration Management for GPS Processing Excellence**
+**Enhanced Configuration Management for GPS Processing Excellence**

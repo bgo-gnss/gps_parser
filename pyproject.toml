@@ -34,10 +34,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/vedur-is/gps_parser"
-Repository = "https://github.com/vedur-is/gps_parser.git"
-Issues = "https://github.com/vedur-is/gps_parser/issues"
-Documentation = "https://github.com/vedur-is/gps_parser/blob/main/CLAUDE.md"
+Homepage = "https://github.com/bennigo/gps_parser"
+Repository = "https://github.com/bennigo/gps_parser.git"
+Issues = "https://github.com/bennigo/gps_parser/issues"
+Documentation = "https://github.com/bennigo/gps_parser/blob/main/CLAUDE.md"
 
 [build-system]
 requires = ["hatchling"]
