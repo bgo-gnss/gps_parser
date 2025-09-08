@@ -1,19 +1,43 @@
 [project]
 name = "gps_parser"
-version = "0.3.0"
+version = "0.4.0"
 authors = [
   { name = "Benedikt Gunnar Ófeigsson", email = "bgo@vedur.is" },
   { name = "Maria Fernanda Gonzalez", email = "mariagr@vedur.is" },
 ]
-description = "Parser library to work with gps library packages"
+description = "Enhanced GPS configuration management for Veðurstofan Íslands GPS processing ecosystem"
 readme = "README.md"
 classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9", 
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Topic :: Scientific/Engineering :: GIS",
+  "Topic :: System :: Systems Administration",
+  "Intended Audience :: Science/Research",
 ]
 maintainers = [{ name = "Benedikt Gunnar Ófeigsson", email = "bgo@vedur.is" }]
 requires-python = ">=3.8"
 dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0", 
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/vedur-is/gps_parser"
+Repository = "https://github.com/vedur-is/gps_parser.git"
+Issues = "https://github.com/vedur-is/gps_parser/issues"
+Documentation = "https://github.com/vedur-is/gps_parser/blob/main/CLAUDE.md"
 
 [build-system]
 requires = ["hatchling"]
