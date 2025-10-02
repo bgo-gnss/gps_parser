@@ -33,6 +33,9 @@ dev = [
     "ruff>=0.1.0",
 ]
 
+[project.scripts]
+gps-config = "gps_parser.cli:cli"
+
 [project.urls]
 Homepage = "https://github.com/bennigo/gps_parser"
 Repository = "https://github.com/bennigo/gps_parser.git"

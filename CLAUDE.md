@@ -26,6 +26,9 @@ This is `gps_parser` - a centralized GPS configuration management package for Ve
 gps_parser/
 ├── src/gps_parser/
 │   ├── __init__.py          # Main ConfigParser class
+│   ├── cli/                 # CLI commands
+│   │   ├── __init__.py      # CLI entry point
+│   │   └── config.py        # gps-config deploy command
 │   ├── stations.cfg         # Station configuration template
 │   └── postprocess.cfg      # Processing configuration template
 ├── data/                    # Configuration templates for setup
@@ -59,14 +62,31 @@ python -c "import gps_parser; parser = gps_parser.ConfigParser(); print(parser.g
 ```
 
 ### Configuration Management
+
+#### gps-config CLI Tool (NEW in v0.4.0)
+```bash
+# Auto-detect environment and deploy configuration
+gps-config deploy
+
+# Deploy specific environment (laptop-bgo, production, rek.vedur.is, staging)
+gps-config deploy --env rek.vedur.is
+
+# Preview changes without writing files
+gps-config deploy --dry-run --show-diff
+
+# Deploy with verbose output
+gps-config deploy --verbose
+
+# Deploy from custom config directory
+gps-config deploy --config-dir /path/to/gps-config-data
+```
+
+#### Traditional Configuration Setup
 ```bash
 # Check config location
 echo $GPS_CONFIG_PATH  # or default ~/.config/gpsconfig/
 
-# Validate configuration
-python -m gps_parser.validate  # TODO: Implement validation module
-
-# Update user config from templates
+# Update user config from templates (legacy method)
 ./scripts/setup-config.sh --update
 ```
 
@@ -78,6 +98,7 @@ python -m gps_parser.validate  # TODO: Implement validation module
 - XDG-compliant configuration directory handling
 - Basic station and postprocess configuration parsing
 - Setup script for user environment deployment
+- **NEW**: `gps-config deploy` CLI tool for template-based deployment
 
 ### 🔄 **Phase 1 Implementation (Current Sprint)**:
 
@@ -165,6 +186,114 @@ default_session = 15s_24hr
 default_compression = .gz
 default_end_offset_days = 1
 health_extraction_pattern = *.sbf*
+```
+
+## 🚀 Configuration Deployment with gps-config
+
+The `gps-config deploy` command provides template-based configuration deployment for multiple environments from a single source (gps-config-data repository).
+
+### Template System
+
+**Template files** (`.template` suffix) contain `{{variable}}` placeholders that are replaced with environment-specific values during deployment:
+
+```ini
+# receivers.cfg.template
+prepath = {{data_prepath}}
+tmp_dir = {{tmp_dir}}
+```
+
+**Environment files** (`environments/*.env`) define values for each environment:
+
+```ini
+# environments/laptop-bgo.env
+[paths]
+data_prepath = /home/bgo/work/projects/gps/gpslibrary_new/receivers/tmp/data/
+tmp_dir = /home/bgo/tmp/download/
+
+[scheduler]
+database = ~/.cache/gps_receivers/scheduler.db
+max_workers = 2
+```
+
+**Variable resolution**: The tool creates variables with both `section_key` (e.g., `scheduler_database`) and `key` (e.g., `database`) formats for flexibility.
+
+### Deployment Workflow
+
+1. **Auto-detect environment** from hostname (or specify with `--env`)
+2. **Load environment file** from `environments/<env>.env`
+3. **Find template files** (all `*.template` files)
+4. **Render templates** by replacing `{{variables}}`
+5. **Write output files** (remove `.template` suffix)
+
+### Supported Environments
+
+- **laptop-bgo**: Development laptop (2 workers, DEBUG logging)
+- **production**: Generic production servers (5 workers, INFO logging)
+- **rek.vedur.is**: Primary production server (100 workers, 173 stations)
+- **staging**: Testing servers (3 workers, DEBUG logging)
+
+### CLI Options
+
+```bash
+# Basic deployment
+gps-config deploy                           # Auto-detect environment
+gps-config deploy --env rek.vedur.is       # Specific environment
+
+# Preview and validation
+gps-config deploy --dry-run                # Don't write files
+gps-config deploy --show-diff              # Show what would change
+gps-config deploy --verbose                # Detailed output
+
+# Custom config location
+gps-config deploy --config-dir /path/to/gps-config-data
+```
+
+### Integration with gps-config-data
+
+The deployment tool expects to work with the `gps-config-data` repository structure:
+
+```
+gps-config-data/
+├── environments/
+│   ├── laptop-bgo.env
+│   ├── production.env
+│   ├── rek.vedur.is.env
+│   └── staging.env
+├── receivers.cfg.template
+├── scheduler.yaml.template
+├── postprocess.cfg.template
+├── stations.cfg              # Shared (not templated)
+├── database.cfg              # Shared (uses env vars for secrets)
+└── DEPLOYMENT.md            # Deployment guide
+```
+
+### Example Deployment Session
+
+```bash
+$ gps-config deploy --dry-run --show-diff
+Auto-detected environment: laptop-bgo
+Loaded 55 variables from laptop-bgo.env
+Found 3 template files
+
+Configuration changes for environment 'laptop-bgo':
+  New file: receivers.cfg
+  --- /dev/null
+  +++ receivers.cfg
+  + prepath = /home/bgo/work/projects/gps/gpslibrary_new/receivers/tmp/data/
+  ...
+
+$ gps-config deploy --verbose
+Auto-detected environment: laptop-bgo
+Loaded 55 variables from laptop-bgo.env
+Found 3 template files
+
+Deploying to ~/.config/gpsconfig...
+  updated: receivers.cfg
+  updated: scheduler.yaml
+  updated: postprocess.cfg
+
+✓ Successfully deployed 3 configuration files
+  3 files updated, 0 unchanged
 ```
 
 ## 🧪 Testing Strategy
