@@ -73,7 +73,17 @@ class ConfigParser:
             ]
         elif self.config.has_section(station_id):
             station_info = dict(self.config.items(station_id))
-            return {"station": station_info}
+
+            # Strip inline comments (# ...) from all values
+            # This fixes the bug where IP addresses like "10.4.1.251 # 18.8.2022"
+            # would include the comment, causing DNS resolution failures
+            cleaned_info = {}
+            for key, value in station_info.items():
+                # Remove everything after # and strip whitespace
+                cleaned_value = value.split('#')[0].strip()
+                cleaned_info[key] = cleaned_value
+
+            return {"station": cleaned_info}
         else:
             raise Exception(f"Station '{station_id}' not found in 'stations.cfg' file.")
 
