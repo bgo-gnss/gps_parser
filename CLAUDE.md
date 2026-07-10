@@ -207,7 +207,7 @@ tmp_dir = {{tmp_dir}}
 ```ini
 # environments/laptop-bgo.env
 [paths]
-data_prepath = /home/bgo/work/projects/gps/gpslibrary_new/receivers/tmp/data/
+data_prepath = /home/bgo/work/projects/gpslibrary/receivers/tmp/data/
 tmp_dir = /home/bgo/tmp/download/
 
 [scheduler]
@@ -279,7 +279,7 @@ Configuration changes for environment 'laptop-bgo':
   New file: receivers.cfg
   --- /dev/null
   +++ receivers.cfg
-  + prepath = /home/bgo/work/projects/gps/gpslibrary_new/receivers/tmp/data/
+  + prepath = /home/bgo/work/projects/gpslibrary/receivers/tmp/data/
   ...
 
 $ gps-config deploy --verbose
