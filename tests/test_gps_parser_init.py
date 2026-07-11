@@ -1,6 +1,4 @@
 import os
-import tempfile
-import configparser
 import pytest
 
 from src.gps_parser.__init__ import ConfigParser

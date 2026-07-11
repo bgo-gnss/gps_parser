@@ -205,7 +205,7 @@ class ConfigDeployer:
 
                 for i, (old, new) in enumerate(zip(existing_lines, rendered_lines)):
                     if old != new:
-                        print(f"  Line {i+1}:")
+                        print(f"  Line {i + 1}:")
                         print(f"  - {old}")
                         print(f"  + {new}")
             else:
@@ -261,13 +261,17 @@ class ConfigDeployer:
                 try:
                     self.show_diff(template, variables)
                 except Exception as e:
-                    print(f"Error showing diff for {template.name}: {e}", file=sys.stderr)
+                    print(
+                        f"Error showing diff for {template.name}: {e}", file=sys.stderr
+                    )
                     return 1
             print()
 
         # Deploy templates
         if dry_run:
-            print(f"DRY RUN: Would deploy {len(templates)} templates to {self.deploy_dir}")
+            print(
+                f"DRY RUN: Would deploy {len(templates)} templates to {self.deploy_dir}"
+            )
         else:
             if verbose:
                 print(f"\nDeploying to {self.deploy_dir}...\n")
@@ -277,15 +281,26 @@ class ConfigDeployer:
 
         for template in templates:
             try:
-                output_path, has_changed = self.deploy_template(template, variables, dry_run)
+                output_path, has_changed = self.deploy_template(
+                    template, variables, dry_run
+                )
                 deployed.append(output_path)
                 if has_changed:
                     changed.append(output_path)
 
                 if verbose or dry_run:
-                    status = "would create" if dry_run and not output_path.exists() else (
-                        "would update" if dry_run else "created" if not output_path.exists() else
-                        "updated" if has_changed else "unchanged"
+                    status = (
+                        "would create"
+                        if dry_run and not output_path.exists()
+                        else (
+                            "would update"
+                            if dry_run
+                            else "created"
+                            if not output_path.exists()
+                            else "updated"
+                            if has_changed
+                            else "unchanged"
+                        )
                     )
                     print(f"  {status}: {output_path.name}")
 
@@ -297,7 +312,9 @@ class ConfigDeployer:
         if not dry_run:
             print(f"\n✓ Successfully deployed {len(deployed)} configuration files")
             if changed:
-                print(f"  {len(changed)} files updated, {len(deployed) - len(changed)} unchanged")
+                print(
+                    f"  {len(changed)} files updated, {len(deployed) - len(changed)} unchanged"
+                )
         else:
             print(f"\nDry run complete. Would deploy {len(deployed)} files.")
 
@@ -322,39 +339,33 @@ Examples:
 
   # Deploy with verbose output
   gps-config deploy --env production --verbose
-        """
+        """,
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # Deploy command
     deploy_parser = subparsers.add_parser(
-        "deploy",
-        help="Deploy configuration from templates"
+        "deploy", help="Deploy configuration from templates"
     )
     deploy_parser.add_argument(
-        "--env",
-        help="Environment name (auto-detects if not specified)"
+        "--env", help="Environment name (auto-detects if not specified)"
     )
     deploy_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview changes without writing files"
+        "--dry-run", action="store_true", help="Preview changes without writing files"
     )
     deploy_parser.add_argument(
         "--show-diff",
         action="store_true",
-        help="Show diff between current and new configuration"
+        help="Show diff between current and new configuration",
     )
     deploy_parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Verbose output"
+        "--verbose", "-v", action="store_true", help="Verbose output"
     )
     deploy_parser.add_argument(
         "--config-dir",
         type=Path,
-        help="Path to gps-config-data directory (auto-detects if not specified)"
+        help="Path to gps-config-data directory (auto-detects if not specified)",
     )
 
     args = parser.parse_args()

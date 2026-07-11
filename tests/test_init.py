@@ -1,7 +1,4 @@
 import os
-import tempfile
-import shutil
-import configparser
 import pytest
 
 from gps_parser import ConfigParser
