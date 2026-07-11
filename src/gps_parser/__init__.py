@@ -1,22 +1,178 @@
 import configparser
 import logging
 import os
-from typing import Any, Dict, Union
+import threading
+from typing import Any, Dict, Optional, Tuple, Union
 # import shutil
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Module-level parsed-config cache
+# ---------------------------------------------------------------------------
+#
+# Every ``ConfigParser()`` used to fully re-parse stations.cfg (~4565 lines,
+# ~196 sections) TWICE — once through ``configparser.read()`` and once through
+# the pure-Python duplicate-key line scan — plus postprocess.cfg, on every
+# construction. Measured at ~13-19 ms per construction, which was ~58% of the
+# cumulative wall time of a full 173-station .NEU fleet run (see the
+# 2026-07-11 I/O perf audit, finding F1). Callers across the ecosystem
+# construct one ``ConfigParser`` per station (geo_dataread.openGlobkTimes,
+# gps_plot.timesmatplt plot loop, ...), so the parse is memoized here, at the
+# single in-scope choke point, and every caller benefits unchanged.
+#
+# Cache key / invalidation rationale:
+#   * keyed on the *resolved* absolute paths of both config files, so a
+#     GPS_CONFIG_PATH change (or symlink retarget) is a different entry;
+#   * validated against a per-file signature ``(st_mtime_ns, st_size)``.
+#     Plain ``st_mtime`` (seconds) is NOT enough: many filesystems store
+#     coarse timestamps, so a rewrite landing within the same second as the
+#     previous one would be invisible and serve a stale parse. ``st_mtime_ns``
+#     catches sub-second rewrites where the filesystem records them, and
+#     ``st_size`` additionally catches rewrites that a coarse-granularity
+#     filesystem timestamps identically but that change the file length.
+#     Any signature mismatch (including a file appearing/disappearing, which
+#     flips the signature to/from ``None``) forces a full re-parse.
+#
+# The cached ``configparser.ConfigParser`` object is SHARED between all
+# ``ConfigParser`` instances reading the same unchanged files. It must be
+# treated as read-only; every accessor in this package only reads it.
+
+# Per-file signature: (st_mtime_ns, st_size), or None if the file is missing.
+_FileSignature = Optional[Tuple[int, int]]
+# (stations signature, postprocess signature) -> parsed config
+_CacheEntry = Tuple[Tuple[_FileSignature, _FileSignature], configparser.ConfigParser]
+
+_config_cache: Dict[Tuple[str, str], _CacheEntry] = {}
+_config_cache_lock = threading.Lock()
+
+
+def _file_signature(path: str) -> _FileSignature:
+    """Return the cache-invalidation signature ``(st_mtime_ns, st_size)``.
+
+    Returns None when the file cannot be stat'ed (missing file), which is
+    itself a valid signature state: it differs from any existing-file
+    signature, so a file appearing later invalidates the cached parse.
+    See the module-level cache comment for why mtime alone is insufficient.
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
+def clear_config_cache() -> None:
+    """Drop all memoized parsed configurations (primarily for tests)."""
+    with _config_cache_lock:
+        _config_cache.clear()
+
+
+def _warn_duplicate_keys(cfg_path: str) -> None:
+    """Scan a config file for duplicate keys and log warnings.
+
+    With strict=False the parser silently takes the last value.
+    This function detects those duplicates so operators can fix them.
+
+    Runs once per cached parse (i.e. once per (path, mtime_ns, size)
+    combination), not on every ``ConfigParser()`` construction — the scan
+    alone re-read all ~4565 lines of stations.cfg per construction before
+    the cache was introduced. Which key wins on a duplicate is unchanged
+    (last value, decided by configparser itself); only the scan frequency
+    changed.
+    """
+    try:
+        seen: Dict[str, Dict[str, int]] = {}  # section -> {key -> line_number}
+        current_section = None
+        with open(cfg_path, "r") as f:
+            for lineno, line in enumerate(f, 1):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#") or stripped.startswith(";"):
+                    continue
+                if stripped.startswith("[") and "]" in stripped:
+                    current_section = stripped[1 : stripped.index("]")]
+                    if current_section not in seen:
+                        seen[current_section] = {}
+                    continue
+                if current_section and "=" in stripped:
+                    key = stripped.split("=", 1)[0].strip()
+                    if key in seen[current_section]:
+                        logger.warning(
+                            "Duplicate key '%s' in [%s] at line %d "
+                            "(first at line %d) in %s — using last value",
+                            key,
+                            current_section,
+                            lineno,
+                            seen[current_section][key],
+                            cfg_path,
+                        )
+                    else:
+                        seen[current_section][key] = lineno
+    except Exception:
+        pass  # Don't let duplicate detection break initialization
+
+
+def _parse_config_files(
+    stations_path: str, postprocess_path: str
+) -> configparser.ConfigParser:
+    """Parse stations.cfg + postprocess.cfg into one configparser (uncached).
+
+    Identical read order and parser options to the pre-cache
+    ``ConfigParser.__init__`` body, so the parsed values are byte-for-byte
+    the same as before the cache existed.
+    """
+    # strict=False: duplicate keys resolve to last value instead of
+    # crashing the entire config parse (which blocks ALL stations)
+    config = configparser.ConfigParser(
+        interpolation=configparser.ExtendedInterpolation(),
+        strict=False,
+    )
+
+    # Reading the stations.cfg file
+    config.read(stations_path)
+
+    # Check for duplicate keys (warn but don't crash thanks to strict=False)
+    _warn_duplicate_keys(stations_path)
+
+    # Reading the postprocess.cfg file
+    config.read(postprocess_path)
+
+    return config
+
+
+def _get_parsed_config(
+    stations_path: str, postprocess_path: str
+) -> configparser.ConfigParser:
+    """Memoized parse of the two config files.
+
+    Returns the already-parsed shared ``configparser.ConfigParser`` when both
+    files are unchanged since the last parse (signature match); re-parses and
+    replaces the cache entry when either file changed. The signatures are
+    taken BEFORE parsing, so a write racing the parse can only make the
+    cached entry look older than it is — the next construction then re-parses
+    (never serves content newer than its recorded signature as stale-fresh).
+    """
+    key = (os.path.realpath(stations_path), os.path.realpath(postprocess_path))
+    signature = (_file_signature(stations_path), _file_signature(postprocess_path))
+
+    with _config_cache_lock:
+        entry = _config_cache.get(key)
+        if entry is not None and entry[0] == signature:
+            return entry[1]
+
+    # Parse outside the lock: a concurrent race parses twice (harmless, both
+    # results identical) instead of serializing all constructions on file I/O.
+    config = _parse_config_files(stations_path, postprocess_path)
+
+    with _config_cache_lock:
+        _config_cache[key] = (signature, config)
+
+    return config
 
 
 class ConfigParser:
     def __init__(self):
         # Setting up the working directories
-        # strict=False: duplicate keys resolve to last value instead of
-        # crashing the entire config parse (which blocks ALL stations)
-        self.config = configparser.ConfigParser(
-            interpolation=configparser.ExtendedInterpolation(),
-            strict=False,
-        )
-
         self.config_path = os.environ.get("GPS_CONFIG_PATH")
         if self.config_path is None:
             # [INFO:] if GPS_CONFIG_PATH is not set make ~/.gpsconfig/gpsconfig as default
@@ -33,58 +189,21 @@ class ConfigParser:
             )
 
         # print(self.config_path)
-        # Reading the stations.cfg file
         self.dest_stations_config_path = os.path.join(self.config_path, "stations.cfg")
-        self.config.read(self.dest_stations_config_path)
-
-        # Check for duplicate keys (warn but don't crash thanks to strict=False)
-        self._warn_duplicate_keys(self.dest_stations_config_path)
-
-        # Reading the postprocess.cfg file
         self.dest_postprocess_config_path = os.path.join(
             self.config_path, "postprocess.cfg"
         )
-        self.config.read(self.dest_postprocess_config_path)
+
+        # Memoized: repeated constructions over unchanged files share one
+        # parsed config instead of re-parsing ~4565 lines per station
+        # (~13-19 ms each, ~58% of a 173-station fleet run pre-cache).
+        self.config = _get_parsed_config(
+            self.dest_stations_config_path, self.dest_postprocess_config_path
+        )
 
     def _warn_duplicate_keys(self, cfg_path: str) -> None:
-        """Scan a config file for duplicate keys and log warnings.
-
-        With strict=False the parser silently takes the last value.
-        This method detects those duplicates so operators can fix them.
-        """
-        try:
-            seen: Dict[str, Dict[str, int]] = {}  # section -> {key -> line_number}
-            current_section = None
-            with open(cfg_path, "r") as f:
-                for lineno, line in enumerate(f, 1):
-                    stripped = line.strip()
-                    if (
-                        not stripped
-                        or stripped.startswith("#")
-                        or stripped.startswith(";")
-                    ):
-                        continue
-                    if stripped.startswith("[") and "]" in stripped:
-                        current_section = stripped[1 : stripped.index("]")]
-                        if current_section not in seen:
-                            seen[current_section] = {}
-                        continue
-                    if current_section and "=" in stripped:
-                        key = stripped.split("=", 1)[0].strip()
-                        if key in seen[current_section]:
-                            logger.warning(
-                                "Duplicate key '%s' in [%s] at line %d "
-                                "(first at line %d) in %s — using last value",
-                                key,
-                                current_section,
-                                lineno,
-                                seen[current_section][key],
-                                cfg_path,
-                            )
-                        else:
-                            seen[current_section][key] = lineno
-        except Exception:
-            pass  # Don't let duplicate detection break initialization
+        """Backward-compatible shim for the module-level scan (see above)."""
+        _warn_duplicate_keys(cfg_path)
 
     # Establishing the methods usable through the package to interact with the cparser module
     def get_config(self, section, option):
