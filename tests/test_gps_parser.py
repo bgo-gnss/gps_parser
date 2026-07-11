@@ -122,10 +122,45 @@ totPath = /mnt/gpsdata/
 
     def test_postprocess_dir_access(self, config_parser):
         """Test post-process directory path access."""
-        
+
         # Test PATHS section access
         tot_path = config_parser.getPostProcessDir("totPath")
         assert tot_path == "/mnt/gpsdata/"
+
+    def test_postprocess_dir_backward_compatibility(self):
+        """Test backward compatibility with legacy [Configs] section."""
+        import tempfile
+
+        # Create a temporary directory for legacy config
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create stations.cfg (required by ConfigParser)
+            stations_cfg = os.path.join(temp_dir, 'stations.cfg')
+            with open(stations_cfg, 'w') as f:
+                f.write("""# Minimal stations config
+[TEST]
+station_name = Test Station
+""")
+
+            # Create postprocess.cfg with legacy [Configs] section
+            postprocess_cfg = os.path.join(temp_dir, 'postprocess.cfg')
+            with open(postprocess_cfg, 'w') as f:
+                f.write("""# Legacy postprocess configuration
+[Configs]
+totDir = /mnt/gpsdata/legacy/
+preDir = /mnt/gpsdata/pre/
+rapDir = /mnt/gpsdata/rap/
+""")
+
+            # Initialize parser with legacy config
+            with patch.dict('os.environ', {'GPS_CONFIG_PATH': temp_dir}):
+                legacy_parser = cp.ConfigParser()
+
+                # Test that legacy [Configs] section still works
+                tot_dir = legacy_parser.getPostProcessDir("totDir")
+                assert tot_dir == "/mnt/gpsdata/legacy/"
+
+                pre_dir = legacy_parser.getPostProcessDir("preDir")
+                assert pre_dir == "/mnt/gpsdata/pre/"
 
     def test_missing_station_error(self, config_parser):
         """Test error handling for missing stations."""

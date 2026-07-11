@@ -1,15 +1,20 @@
 import configparser
+import logging
 import os
 from typing import Dict, Any, Optional, Union
 # import shutil
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigParser:
     def __init__(self):
         # Setting up the working directories
-        # self.config = configparser.ConfigParser()
+        # strict=False: duplicate keys resolve to last value instead of
+        # crashing the entire config parse (which blocks ALL stations)
         self.config = configparser.ConfigParser(
-            interpolation=configparser.ExtendedInterpolation()
+            interpolation=configparser.ExtendedInterpolation(),
+            strict=False,
         )
 
         self.config_path = os.environ.get("GPS_CONFIG_PATH")
@@ -32,11 +37,47 @@ class ConfigParser:
         self.dest_stations_config_path = os.path.join(self.config_path, "stations.cfg")
         self.config.read(self.dest_stations_config_path)
 
+        # Check for duplicate keys (warn but don't crash thanks to strict=False)
+        self._warn_duplicate_keys(self.dest_stations_config_path)
+
         # Reading the postprocess.cfg file
         self.dest_postprocess_config_path = os.path.join(
             self.config_path, "postprocess.cfg"
         )
         self.config.read(self.dest_postprocess_config_path)
+
+    def _warn_duplicate_keys(self, cfg_path: str) -> None:
+        """Scan a config file for duplicate keys and log warnings.
+
+        With strict=False the parser silently takes the last value.
+        This method detects those duplicates so operators can fix them.
+        """
+        try:
+            seen: Dict[str, Dict[str, int]] = {}  # section -> {key -> line_number}
+            current_section = None
+            with open(cfg_path, 'r') as f:
+                for lineno, line in enumerate(f, 1):
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith('#') or stripped.startswith(';'):
+                        continue
+                    if stripped.startswith('[') and ']' in stripped:
+                        current_section = stripped[1:stripped.index(']')]
+                        if current_section not in seen:
+                            seen[current_section] = {}
+                        continue
+                    if current_section and '=' in stripped:
+                        key = stripped.split('=', 1)[0].strip()
+                        if key in seen[current_section]:
+                            logger.warning(
+                                "Duplicate key '%s' in [%s] at line %d "
+                                "(first at line %d) in %s — using last value",
+                                key, current_section, lineno,
+                                seen[current_section][key], cfg_path,
+                            )
+                        else:
+                            seen[current_section][key] = lineno
+        except Exception:
+            pass  # Don't let duplicate detection break initialization
 
     # Establishing the methods usable through the package to interact with the cparser module
     def get_config(self, section, option):
@@ -88,11 +129,16 @@ class ConfigParser:
             raise Exception(f"Station '{station_id}' not found in 'stations.cfg' file.")
 
     def getPostProcessDir(self, option):
-        if self.config.has_section("PATHS"):
-            if self.config.has_option("PATHS", option):
-                return os.path.expanduser(self.config.get("PATHS", option))
+        # Check PATHS section first
+        if self.config.has_section("PATHS") and self.config.has_option("PATHS", option):
+            return os.path.expanduser(self.config.get("PATHS", option))
+
+        # Check legacy Configs section for backward compatibility
+        if self.config.has_section("Configs") and self.config.has_option("Configs", option):
+            return os.path.expanduser(self.config.get("Configs", option))
+
         raise Exception(
-            f"Option '{option}' not found in 'Configs' section of the postprocess configuration file."
+            f"Option '{option}' not found in [PATHS] or [Configs] sections of the postprocess configuration file."
         )
 
     def getPostProcessConfig(self, option):
