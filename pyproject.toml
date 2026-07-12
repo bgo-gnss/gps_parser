@@ -37,10 +37,10 @@ dev = [
 gps-config = "gps_parser.cli:cli"
 
 [project.urls]
-Homepage = "https://github.com/bennigo/gps_parser"
-Repository = "https://github.com/bennigo/gps_parser.git"
-Issues = "https://github.com/bennigo/gps_parser/issues"
-Documentation = "https://github.com/bennigo/gps_parser/blob/main/CLAUDE.md"
+Homepage = "https://github.com/bgo-gnss/gps_parser"
+Repository = "https://github.com/bgo-gnss/gps_parser.git"
+Issues = "https://github.com/bgo-gnss/gps_parser/issues"
+Documentation = "https://github.com/bgo-gnss/gps_parser/blob/main/CLAUDE.md"
 
 [build-system]
 requires = ["hatchling"]
