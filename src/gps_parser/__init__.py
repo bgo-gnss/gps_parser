@@ -8,6 +8,58 @@ from typing import Any, Dict, Optional, Tuple, Union
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Passive-station schema (stations.cfg role/flag fields)
+# ---------------------------------------------------------------------------
+#
+# stations.cfg carries three optional per-station keys describing the
+# station's role in the processing network (see
+# gpslibrary/GLOBAL_SITES_investigation.md):
+#
+#   station_role      = active | passive     (default: active)
+#   is_reference_site = true | false         (default: false)
+#   is_in_iceland     = true | false         (default: true)
+#
+# ``station_role = passive`` marks data-source-only stations (reference-frame
+# ties / regional context series from the GLOBK processing) that IMO does not
+# operate: they carry no receiver/router/connection keys, and every
+# operational consumer (receivers scheduler + DB seeder, tostools fleet ops,
+# cfg reconcile, aflogun catalog) must skip them. Consumers should treat a
+# missing ``station_role`` as ``active`` (the pre-schema status quo).
+#
+# NOTE: distinct from the pre-existing ``health_check = passive`` key, which
+# means "operated station, but don't actively poll health" — an unrelated
+# concept that happens to share the word.
+
+STATION_ROLE_ACTIVE = "active"
+STATION_ROLE_PASSIVE = "passive"
+STATION_ROLES = (STATION_ROLE_ACTIVE, STATION_ROLE_PASSIVE)
+
+_BOOL_TRUE = {"true", "yes", "1", "on"}
+_BOOL_FALSE = {"false", "no", "0", "off"}
+
+
+def parse_config_bool(value: Any, default: bool = False) -> bool:
+    """Parse a stations.cfg boolean field (``is_reference_site`` etc.).
+
+    Accepts true/false, yes/no, 1/0, on/off (case-insensitive); ``None`` or
+    empty string returns ``default``. Raises ``ValueError`` for anything else
+    so validation surfaces typos instead of silently defaulting.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).split("#")[0].strip().lower()
+    if not text:
+        return default
+    if text in _BOOL_TRUE:
+        return True
+    if text in _BOOL_FALSE:
+        return False
+    raise ValueError(f"Not a boolean config value: {value!r}")
+
+
+# ---------------------------------------------------------------------------
 # Module-level parsed-config cache
 # ---------------------------------------------------------------------------
 #
@@ -253,6 +305,36 @@ class ConfigParser:
             return {"station": cleaned_info}
         else:
             raise Exception(f"Station '{station_id}' not found in 'stations.cfg' file.")
+
+    def getStationRole(self, station_id: str) -> str:
+        """Return the station's role: ``"active"`` or ``"passive"``.
+
+        Missing ``station_role`` key → ``"active"`` (pre-schema status quo).
+        Unknown values are logged and treated as ``"active"`` — fail-open so
+        a typo cannot silently drop an operated station from the schedulers;
+        ``validateStationConfig`` flags the bad value for correction.
+        """
+        station_upper = station_id.upper()
+        if not self.config.has_section(station_upper):
+            raise Exception(
+                f"Station '{station_upper}' not found in 'stations.cfg' file."
+            )
+        raw = self.config.get(station_upper, "station_role", fallback="") or ""
+        role = raw.split("#")[0].strip().lower()
+        if not role:
+            return STATION_ROLE_ACTIVE
+        if role not in STATION_ROLES:
+            logger.warning(
+                "Station '%s': unknown station_role %r — treating as 'active'",
+                station_upper,
+                raw,
+            )
+            return STATION_ROLE_ACTIVE
+        return role
+
+    def isPassiveStation(self, station_id: str) -> bool:
+        """True when ``station_role = passive`` (data-source-only station)."""
+        return self.getStationRole(station_id) == STATION_ROLE_PASSIVE
 
     def getPostProcessDir(self, option):
         # Check PATHS section first
@@ -577,7 +659,39 @@ class ConfigParser:
             )
             return result
 
-        # Required fields
+        # Role / flag schema fields (validated for every station)
+        raw_role = (
+            (self.config.get(station_upper, "station_role", fallback="") or "")
+            .split("#")[0]
+            .strip()
+            .lower()
+        )
+        if raw_role and raw_role not in STATION_ROLES:
+            result["valid"] = False
+            result["errors"].append(
+                f"Invalid station_role '{raw_role}' for station "
+                f"'{station_upper}' (expected one of {STATION_ROLES})"
+            )
+        is_passive = raw_role == STATION_ROLE_PASSIVE
+        result["config"]["station_role"] = raw_role or STATION_ROLE_ACTIVE
+
+        for bool_field, bool_default in (
+            ("is_reference_site", False),
+            ("is_in_iceland", True),
+        ):
+            raw_bool = self.config.get(station_upper, bool_field, fallback=None)
+            try:
+                result["config"][bool_field] = parse_config_bool(raw_bool, bool_default)
+            except ValueError:
+                result["valid"] = False
+                result["errors"].append(
+                    f"Invalid boolean '{raw_bool}' for field '{bool_field}' "
+                    f"of station '{station_upper}'"
+                )
+
+        # Required fields — only for operated (active-role) stations. Passive
+        # stations are data-source descriptors: no receiver/router keys by
+        # design, so requiring connection fields would be a contradiction.
         required_fields = ["router_ip", "receiver_ftpport", "receiver_type"]
         optional_fields = [
             "timeout_category",
@@ -586,15 +700,23 @@ class ConfigParser:
             "router_type",
         ]
 
-        # Check required fields
-        for field in required_fields:
-            if self.config.has_option(station_upper, field):
-                result["config"][field] = self.config.get(station_upper, field)
-            else:
-                result["valid"] = False
-                result["errors"].append(
-                    f"Missing required field '{field}' for station '{station_upper}'"
-                )
+        if is_passive:
+            for field in required_fields:
+                if self.config.has_option(station_upper, field):
+                    result["warnings"].append(
+                        f"Passive station '{station_upper}' carries operational "
+                        f"field '{field}' — passive stations are data-source-only"
+                    )
+        else:
+            # Check required fields
+            for field in required_fields:
+                if self.config.has_option(station_upper, field):
+                    result["config"][field] = self.config.get(station_upper, field)
+                else:
+                    result["valid"] = False
+                    result["errors"].append(
+                        f"Missing required field '{field}' for station '{station_upper}'"
+                    )
 
         # Check optional fields and warn if missing
         for field in optional_fields:
