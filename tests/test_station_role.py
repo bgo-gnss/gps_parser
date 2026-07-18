@@ -11,6 +11,7 @@ from src.gps_parser.__init__ import (
     STATION_ROLE_PASSIVE,
     ConfigParser,
     parse_config_bool,
+    parse_station_role,
 )
 
 STATIONS_CFG = """\
@@ -69,7 +70,30 @@ def test_unknown_role_fails_open_to_active(role_config_dir, caplog):
     parser = ConfigParser()
     with caplog.at_level("WARNING"):
         assert parser.getStationRole("TYPO") == STATION_ROLE_ACTIVE
-    assert "unknown station_role" in caplog.text
+    assert "Unknown station_role" in caplog.text
+
+
+class TestParseStationRoleCanonical:
+    """Module-level parse_station_role — THE canonical parser that
+    receivers / tostools / aflogun import (no local copies allowed)."""
+
+    def test_missing_and_empty_default_to_active(self):
+        assert parse_station_role(None) == STATION_ROLE_ACTIVE
+        assert parse_station_role("") == STATION_ROLE_ACTIVE
+        assert parse_station_role("   ") == STATION_ROLE_ACTIVE
+
+    def test_explicit_roles_case_insensitive(self):
+        assert parse_station_role("active") == STATION_ROLE_ACTIVE
+        assert parse_station_role("passive") == STATION_ROLE_PASSIVE
+        assert parse_station_role("  PASSIVE  ") == STATION_ROLE_PASSIVE
+
+    def test_inline_comment_stripped(self):
+        assert parse_station_role("passive # ZIMM, IGS core") == (STATION_ROLE_PASSIVE)
+
+    def test_unknown_value_fails_open_with_warning(self, caplog):
+        with caplog.at_level("WARNING"):
+            assert parse_station_role("pasive") == STATION_ROLE_ACTIVE
+        assert "Unknown station_role" in caplog.text
 
 
 def test_get_station_role_missing_station_raises(role_config_dir):

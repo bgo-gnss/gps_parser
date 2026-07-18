@@ -59,6 +59,30 @@ def parse_config_bool(value: Any, default: bool = False) -> bool:
     raise ValueError(f"Not a boolean config value: {value!r}")
 
 
+def parse_station_role(value: Any) -> str:
+    """Parse a raw stations.cfg ``station_role`` value — THE canonical parser.
+
+    This is the single source of truth for role parsing across the
+    ecosystem (receivers, tostools, aflogun import it) — do not copy the
+    logic elsewhere. Operates on a raw string so batch readers (plain
+    ``configparser`` loops) can use it without building a full
+    :class:`ConfigParser`.
+
+    Semantics:
+      * ``None`` / empty / whitespace → ``"active"`` (pre-schema status quo)
+      * inline ``# comments`` stripped, case-insensitive
+      * unknown values → ``"active"`` with a warning (fail-OPEN: a typo
+        must never drop an operated station from the schedulers;
+        ``validateStationConfig`` flags the bad value for correction)
+    """
+    role = str(value or "").split("#")[0].strip().lower()
+    if role in STATION_ROLES:
+        return role
+    if role:
+        logger.warning("Unknown station_role %r — treating as 'active'", value)
+    return STATION_ROLE_ACTIVE
+
+
 # ---------------------------------------------------------------------------
 # Module-level parsed-config cache
 # ---------------------------------------------------------------------------
@@ -309,28 +333,18 @@ class ConfigParser:
     def getStationRole(self, station_id: str) -> str:
         """Return the station's role: ``"active"`` or ``"passive"``.
 
-        Missing ``station_role`` key → ``"active"`` (pre-schema status quo).
-        Unknown values are logged and treated as ``"active"`` — fail-open so
-        a typo cannot silently drop an operated station from the schedulers;
-        ``validateStationConfig`` flags the bad value for correction.
+        Thin section-aware wrapper over the canonical module-level
+        :func:`parse_station_role` (missing key → active; unknown values
+        fail OPEN to active with a warning).
         """
         station_upper = station_id.upper()
         if not self.config.has_section(station_upper):
             raise Exception(
                 f"Station '{station_upper}' not found in 'stations.cfg' file."
             )
-        raw = self.config.get(station_upper, "station_role", fallback="") or ""
-        role = raw.split("#")[0].strip().lower()
-        if not role:
-            return STATION_ROLE_ACTIVE
-        if role not in STATION_ROLES:
-            logger.warning(
-                "Station '%s': unknown station_role %r — treating as 'active'",
-                station_upper,
-                raw,
-            )
-            return STATION_ROLE_ACTIVE
-        return role
+        return parse_station_role(
+            self.config.get(station_upper, "station_role", fallback="")
+        )
 
     def isPassiveStation(self, station_id: str) -> bool:
         """True when ``station_role = passive`` (data-source-only station)."""
