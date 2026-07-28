@@ -65,6 +65,7 @@ OUTLIER_OVERRIDE_COLUMNS = (
     "window_robust_iterations",
     "epoch_policy",
     "despike_n_sigma",
+    "min_abort_candidates",
     "min_outlier_n",
     "min_outlier_e",
     "min_outlier_u",
@@ -353,6 +354,25 @@ def _parse_override_row(
             raise ValueError(
                 f"station {marker}: despike_n_sigma {despike_n_sigma!r} is not a number"
             ) from None
+
+    # min_abort_candidates → §3.5a absolute floor on the excess-candidate
+    # abort. Per station because the fraction gate is quantized at small N,
+    # and how small N gets depends on that station's own gap structure
+    # (GFUM over a 90-day window aborts on 4 candidates of 63 = 6.3 %).
+    min_abort = str(row.get("min_abort_candidates") or "").strip()
+    if min_abort:
+        try:
+            value = int(min_abort)
+        except ValueError:
+            raise ValueError(
+                f"station {marker}: min_abort_candidates {min_abort!r} "
+                "is not an integer"
+            ) from None
+        if value < 0:
+            raise ValueError(
+                f"station {marker}: min_abort_candidates {value} must be >= 0"
+            )
+        overrides["min_abort_candidates"] = value
 
     # min_outlier_{n,e,u} → the PER-COMPONENT magnitude floor [N,E,U] routed to
     # the detect_outliers ``min_outlier`` kwarg (a separate array, NOT the
