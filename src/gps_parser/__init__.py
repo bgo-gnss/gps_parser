@@ -1,6 +1,7 @@
 import configparser
 import logging
 import os
+import re
 import threading
 from typing import Any, Dict, Optional, Tuple, Union
 # import shutil
@@ -36,6 +37,61 @@ STATION_ROLES = (STATION_ROLE_ACTIVE, STATION_ROLE_PASSIVE)
 
 _BOOL_TRUE = {"true", "yes", "1", "on"}
 _BOOL_FALSE = {"false", "no", "0", "off"}
+
+#: Legacy ``[Configs]`` spelling -> canonical ``[PATHS]`` name, for
+#: :meth:`Parser.getPostProcessDir`.  Keys are lowercase because configparser
+#: lowercases option names (there is no ``optionxform`` override here), which
+#: is also why the migration NEEDS this map rather than a rename: ``totDir``
+#: and ``totdir`` are the same option, but ``tot_dir`` is a DIFFERENT one, so
+#: moving the keys to snake_case without aliasing would make every existing
+#: ``getPostProcessDir("totDir")`` call raise.
+#:
+#: Two long-standing splits are closed here rather than carried forward:
+#:
+#: * ``totDir`` and ``totPath`` name the SAME directory. Only ``totDir`` was
+#:   ever set — ``totPath`` is commented out in the deployed config — while
+#:   ``gps_plot.plot_gps_timeseries`` reads ``totPath``, so that lookup always
+#:   fell through to its own default. Both now resolve to ``tot_dir``.
+#: * the plate-motion and coordinate files had four spellings across two
+#:   sections (``pfile``/``platefile``, ``coordfile``/``coordFile``), read by
+#:   geofunc, tostools, geo_dataread and gps_plot. Two keys now.
+POSTPROCESS_DIR_ALIASES: Dict[str, str] = {
+    "totdir": "tot_dir",
+    "totpath": "tot_dir",
+    "figdir": "fig_dir",
+    "prepath": "pre_path",
+    "rappath": "rap_path",
+    "pfile": "plate_file",
+    "platefile": "plate_file",
+    "coordfile": "coord_file",
+}
+
+
+#: An UNRENDERED deployment placeholder, e.g. ``{{tot_dir}}``.  ``deploy.py``
+#: substitutes ``{{var}}`` from ``environments/<env>.env`` and only WARNS when
+#: a variable is missing, leaving the literal placeholder in the deployed
+#: file.  Treating that as a real value is worse than treating the key as
+#: absent: ``[PATHS]`` is searched before ``[Configs]``, so one un-substituted
+#: key would shadow a perfectly good legacy value with a path named
+#: ``{{tot_dir}}``.  Skipping it lets a template gain a key before every
+#: environment defines it — which is what makes such a migration rollout-safe
+#: rather than flag-day.
+_PLACEHOLDER_RE = re.compile(r"^\{\{\w+\}\}$")
+
+
+def _postprocess_dir_candidates(option: str) -> Tuple[str, ...]:
+    """Every spelling of ``option``, canonical first.
+
+    Resolution has to work in BOTH directions: a caller asking for the legacy
+    ``totDir`` must find a modern ``tot_dir`` key, and a caller asking for
+    ``tot_dir`` must still find a deployment that only carries ``totDir``.
+    Config files on disk outlive the code that reads them, and during a
+    migration both spellings are in the field at once.
+    """
+    name = option.lower()
+    canonical = POSTPROCESS_DIR_ALIASES.get(name, name)
+    legacy = [k for k, v in POSTPROCESS_DIR_ALIASES.items() if v == canonical]
+    return tuple(dict.fromkeys([canonical, name, *legacy]))
 
 
 def parse_config_bool(value: Any, default: bool = False) -> bool:
@@ -351,18 +407,42 @@ class ConfigParser:
         return self.getStationRole(station_id) == STATION_ROLE_PASSIVE
 
     def getPostProcessDir(self, option):
-        # Check PATHS section first
-        if self.config.has_section("PATHS") and self.config.has_option("PATHS", option):
-            return os.path.expanduser(self.config.get("PATHS", option))
+        """Resolve a postprocess directory, canonical name or legacy spelling.
 
-        # Check legacy Configs section for backward compatibility
-        if self.config.has_section("Configs") and self.config.has_option(
-            "Configs", option
-        ):
-            return os.path.expanduser(self.config.get("Configs", option))
+        Order: ``[PATHS]`` before ``[Configs]``, and within each section the
+        canonical snake_case name before any legacy spelling
+        (:data:`POSTPROCESS_DIR_ALIASES`).  ``[PATHS]`` wins because it is the
+        section the deployment templates fill from ``environments/*.env``,
+        whereas ``[Configs]`` is hardcoded in the template — which is exactly
+        why a value edited only in ``[Configs]`` on a host gets reverted by
+        the next deploy.
 
+        Section order matters more than it looks: it is what lets a host
+        override a template default without editing the template, and what
+        lets this migration be additive — a deployment that still carries
+        only ``[Configs] totDir`` keeps working untouched.
+        """
+        candidates = _postprocess_dir_candidates(option)
+        for section in ("PATHS", "Configs"):
+            if not self.config.has_section(section):
+                continue
+            for name in candidates:
+                if not self.config.has_option(section, name):
+                    continue
+                value = self.config.get(section, name).strip()
+                # An unrendered {{placeholder}} means the environment did not
+                # define this key; fall through rather than shadowing a good
+                # legacy value with it.
+                if not value or _PLACEHOLDER_RE.match(value):
+                    continue
+                return os.path.expanduser(value)
+
+        canonical = candidates[0]
         raise Exception(
-            f"Option '{option}' not found in [PATHS] or [Configs] sections of the postprocess configuration file."
+            f"Option '{option}' not found in [PATHS] or [Configs] of the "
+            f"postprocess configuration file. Looked for {list(candidates)}; "
+            f"the canonical name is '{canonical}' and belongs in [PATHS] "
+            f"(set it per host via gps-config-data environments/*.env)."
         )
 
     def getPostProcessConfig(self, option):
