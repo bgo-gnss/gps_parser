@@ -65,6 +65,8 @@ OUTLIER_OVERRIDE_COLUMNS = (
     "window_robust_iterations",
     "epoch_policy",
     "despike_n_sigma",
+    "min_abort_candidates",
+    "whiten_sigma_clip",
     "min_outlier_n",
     "min_outlier_e",
     "min_outlier_u",
@@ -248,9 +250,7 @@ def read_protect_windows(
     resolved = (
         Path(path)
         if path is not None
-        else catalog_path(
-            "protect_windows", PROTECT_WINDOWS_FILENAME, config=config
-        )
+        else catalog_path("protect_windows", PROTECT_WINDOWS_FILENAME, config=config)
     )
     lines = _catalog_lines(resolved, PROTECT_WINDOWS_FILENAME, "protect-window catalog")
     catalog: dict[str, list[tuple[float, float]]] = {}
@@ -353,6 +353,42 @@ def _parse_override_row(
             raise ValueError(
                 f"station {marker}: despike_n_sigma {despike_n_sigma!r} is not a number"
             ) from None
+
+    # min_abort_candidates → §3.5a absolute floor on the excess-candidate
+    # abort. Per station because the fraction gate is quantized at small N,
+    # and how small N gets depends on that station's own gap structure
+    # (GFUM over a 90-day window aborts on 4 candidates of 63 = 6.3 %).
+    # whiten_sigma_clip → §13 cap on the whitening denominator. Per station
+    # because how badly sigma co-inflates is a property of the site's own
+    # solution quality, not a fleet constant.
+    clip = str(row.get("whiten_sigma_clip") or "").strip()
+    if clip:
+        try:
+            value_c = float(clip)
+        except ValueError:
+            raise ValueError(
+                f"station {marker}: whiten_sigma_clip {clip!r} is not a number"
+            ) from None
+        if value_c < 0.0:
+            raise ValueError(
+                f"station {marker}: whiten_sigma_clip {value_c} must be >= 0"
+            )
+        overrides["whiten_sigma_clip"] = value_c
+
+    min_abort = str(row.get("min_abort_candidates") or "").strip()
+    if min_abort:
+        try:
+            value = int(min_abort)
+        except ValueError:
+            raise ValueError(
+                f"station {marker}: min_abort_candidates {min_abort!r} "
+                "is not an integer"
+            ) from None
+        if value < 0:
+            raise ValueError(
+                f"station {marker}: min_abort_candidates {value} must be >= 0"
+            )
+        overrides["min_abort_candidates"] = value
 
     # min_outlier_{n,e,u} → the PER-COMPONENT magnitude floor [N,E,U] routed to
     # the detect_outliers ``min_outlier`` kwarg (a separate array, NOT the
