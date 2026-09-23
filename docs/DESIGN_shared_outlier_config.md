@@ -128,6 +128,34 @@ verbatim from geo_dataread — one validation site.
 
 ---
 
+## 4. Addendum — steps.yaml (2026-08-24)
+
+The decision above settled *where* step declarations live (deployed catalog,
+single resolver). It did not settle *what they carry*: the flat 6-column CSV
+kept cramming event metadata (date, magnitude, device/serial, event id) into
+its `comment` field, and `gps_parser` could never *write* a declaration —
+picked steps died with the session until the operator hand-edited the CSV.
+
+So `steps.csv` → **`steps.yaml`**, in the same single resolver
+(`gps_parser.outlier_catalogs`), same `StepRecord` consumer interface:
+
+- **Structured metadata** per step — `kind` (required:
+  earthquake/equipment/icing/manual/other), ISO `date` (cross-validated against
+  `epoch_yearf` on the noon convention), `event_id`, `magnitude`, `devices`,
+  `source`, `comment`. Estimated amplitudes deliberately live NOWHERE here —
+  they are the estimate's job (`detrend_params.json` `step_amp_k`).
+- **A write side** — `merge_station_steps` (read-modify-write, atomic, one
+  station) and `convert_steps_csv` (one-time migration). The workbench exposes
+  it as `--declare-step`; the picker's store button runs it. Declaration is a
+  claim a human curates; the estimate is a computation — two artifacts, two
+  writers, which is why the merged-document alternative was rejected.
+- **Dependencies**: `pyyaml` + `gtimes` enter gps_parser (both already one tier
+  up — geo_dataread reads `analysis.yaml` with pyyaml). The "dependency-free"
+  claim above is superseded by exactly those two.
+- **Fallback**: the legacy `steps.csv` is still *read* (with a migration
+  warning) so a config tree deployed ahead of its package keeps working; the
+  merge writer migrates it in place (renames it to `steps.csv.bak`).
+
 ## 4. Migration
 
 ### geo_dataread (thin-shim; keep public names)
