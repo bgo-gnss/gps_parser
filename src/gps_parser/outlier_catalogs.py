@@ -48,6 +48,8 @@ __all__ = [
     "PROTECT_WINDOWS_FILENAME",
     "OUTLIER_OVERRIDES_FILENAME",
     "EXCLUDED_EPOCHS_FILENAME",
+    "DETREND_STATUS_FILENAME",
+    "DETREND_SKIP",
     "STEP_COMPONENTS",
     "STEP_KINDS",
     "STEP_SOURCES",
@@ -63,6 +65,8 @@ __all__ = [
     "read_protect_windows",
     "read_outlier_overrides",
     "read_excluded_epochs",
+    "read_detrend_status",
+    "skipped_detrend_stations",
     "match_declared_epochs",
     "write_steps_yaml",
     "merge_station_steps",
@@ -74,6 +78,9 @@ STEPS_CSV_FILENAME = "steps.csv"
 PROTECT_WINDOWS_FILENAME = "protect_windows.csv"
 OUTLIER_OVERRIDES_FILENAME = "outlier_overrides.csv"
 EXCLUDED_EPOCHS_FILENAME = "excluded_epochs.csv"
+DETREND_STATUS_FILENAME = "detrend_status.csv"
+#: the detrend_status.csv status that keeps a station out of the batch
+DETREND_SKIP = "skip"
 
 #: Component tags a ``steps.yaml`` entry may carry (``ALL`` = every component).
 STEP_COMPONENTS = ("N", "E", "U", "ALL")
@@ -814,6 +821,61 @@ def read_excluded_epochs(
             ) from None
         catalog.setdefault(marker, []).append(epoch)
     return {marker: tuple(sorted(epochs)) for marker, epochs in catalog.items()}
+
+
+def read_detrend_status(
+    path: str | Path | None = None, *, config: ConfigParser | None = None
+) -> dict[str, tuple[str, str]]:
+    """Read the per-station detrend curation status catalog.
+
+    ``detrend_status.csv`` (``sta,status,notes``, ``#`` comments) is the
+    operator's record of the detrend-parameter campaign. A ``skip`` row
+    (:data:`DETREND_SKIP`) means "no record for this station": too little
+    data, or no defensible background (the Reykjanes unrest stations).
+    The batch estimator (``gps-estimate-detrend``) and the workbench's
+    status report both read it through this function.
+
+    Args:
+        path: Explicit catalog path; None resolves via :func:`catalog_path`.
+        config: A ready :class:`ConfigParser` for the None-path resolution.
+
+    Returns:
+        ``{STATION: (status, notes)}``; station upper-cased, status
+        lower-cased. A station listed twice keeps its last row.
+
+    Raises:
+        FileNotFoundError: When the catalog (or a gpsconfig to resolve it from)
+            does not exist.
+        ValueError: On a row without a station or a status.
+    """
+    resolved = (
+        Path(path)
+        if path is not None
+        else catalog_path("detrend_status", DETREND_STATUS_FILENAME, config=config)
+    )
+    lines = _catalog_lines(resolved, DETREND_STATUS_FILENAME, "detrend status catalog")
+    out: dict[str, tuple[str, str]] = {}
+    for row in csv.DictReader(lines):
+        sta = str(row.get("sta") or "").strip().upper()
+        status = str(row.get("status") or "").strip().lower()
+        if not sta or not status:
+            raise ValueError(
+                f"{resolved}: detrend_status.csv row without 'sta' or 'status': {row}"
+            )
+        out[sta] = (status, str(row.get("notes") or "").strip())
+    return out
+
+
+def skipped_detrend_stations(
+    path: str | Path | None = None, *, config: ConfigParser | None = None
+) -> dict[str, str]:
+    """``{STATION: notes}`` of the ``skip`` rows of ``detrend_status.csv``;
+    empty when there is no catalog (it is optional)."""
+    try:
+        status = read_detrend_status(path, config=config)
+    except FileNotFoundError:
+        return {}
+    return {sta: notes for sta, (st, notes) in status.items() if st == DETREND_SKIP}
 
 
 def match_declared_epochs(

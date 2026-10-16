@@ -356,3 +356,42 @@ def test_step_record_is_seismic():
     man = oc.StepRecord(marker="X", epoch_yearf=2013.0, component="ALL", kind="manual")
     assert eq.is_seismic and eq2.is_seismic
     assert not inst.is_seismic and not man.is_seismic
+
+
+# ---------------------------------------------------------------------------
+# detrend_status.csv
+# ---------------------------------------------------------------------------
+
+
+def test_read_detrend_status_normalises_and_keeps_notes(tmp_path):
+    from gps_parser.outlier_catalogs import (
+        read_detrend_status,
+        skipped_detrend_stations,
+    )
+
+    f = tmp_path / "detrend_status.csv"
+    f.write_text(
+        "# comment\nsta,status,notes\n"
+        "hrag,Skip,unrest: deformation-fitted record\n"
+        "SENG,done,\n"
+    )
+    assert read_detrend_status(f) == {
+        "HRAG": ("skip", "unrest: deformation-fitted record"),
+        "SENG": ("done", ""),
+    }
+    assert skipped_detrend_stations(f) == {"HRAG": "unrest: deformation-fitted record"}
+
+
+def test_detrend_status_missing_is_empty_but_malformed_raises(tmp_path):
+    import pytest
+
+    from gps_parser.outlier_catalogs import (
+        read_detrend_status,
+        skipped_detrend_stations,
+    )
+
+    assert skipped_detrend_stations(tmp_path / "nope.csv") == {}
+    f = tmp_path / "detrend_status.csv"
+    f.write_text("sta,status,notes\n,skip,no station\n")
+    with pytest.raises(ValueError, match="without 'sta' or 'status'"):
+        read_detrend_status(f)
