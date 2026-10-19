@@ -105,6 +105,7 @@ STEPS_SCHEMA_VERSION = 1
 
 _OVERRIDE_WINDOW_ORDERS = (0, 1, 2)
 _OVERRIDE_EPOCH_POLICIES = ("per_component", "union")
+_OVERRIDE_METHODS = ("running", "model")
 _TRUE_TOKENS = ("1", "true", "yes", "y", "t")
 _FALSE_TOKENS = ("0", "false", "no", "n", "f")
 
@@ -121,6 +122,8 @@ OUTLIER_OVERRIDE_COLUMNS = (
     "min_outlier_n",
     "min_outlier_e",
     "min_outlier_u",
+    "method",
+    "running_n_sigma",
     "comment",
 )
 
@@ -661,6 +664,33 @@ def _parse_override_row(
             )
         overrides["min_abort_candidates"] = value
 
+    # method / running_n_sigma → the cleaned-view detector (gps_analysis
+    # design §15) and its tolerance in noise units. Per station because a
+    # station may need the model method, or a looser/tighter k (BGÓ
+    # 2026-10-19: tune k without renaming the operational graphs).
+    method = str(row.get("method") or "").strip()
+    if method:
+        if method not in _OVERRIDE_METHODS:
+            raise ValueError(
+                f"station {marker}: method {method!r} — must be one of "
+                f"{_OVERRIDE_METHODS}"
+            )
+        overrides["method"] = method
+
+    run_k = str(row.get("running_n_sigma") or "").strip()
+    if run_k:
+        try:
+            value_k = float(run_k)
+        except ValueError:
+            raise ValueError(
+                f"station {marker}: running_n_sigma {run_k!r} is not a number"
+            ) from None
+        if not value_k > 0.0 or not math.isfinite(value_k):
+            raise ValueError(
+                f"station {marker}: running_n_sigma {value_k} must be finite and > 0"
+            )
+        overrides["running_n_sigma"] = value_k
+
     # min_outlier_{n,e,u} → the PER-COMPONENT magnitude floor [N,E,U] routed to
     # the detect_outliers ``min_outlier`` kwarg (a separate array, NOT the
     # scalar OutlierParams.min_outlier). Active stations want e.g. N/E=5, U=10
@@ -703,7 +733,11 @@ def read_outlier_overrides(
     ``comment`` column is allowed and ignored)::
 
         sta,despike,window_order,window_robust_iterations,epoch_policy,
-        despike_n_sigma,min_outlier_n,min_outlier_e,min_outlier_u
+        despike_n_sigma,min_abort_candidates,whiten_sigma_clip,
+        min_outlier_n,min_outlier_e,min_outlier_u,method,running_n_sigma
+
+    ``method`` is ``running`` | ``model`` (the cleaned-view detector);
+    ``running_n_sigma`` its tolerance k in noise units (> 0).
 
     Args:
         path: Explicit catalog path; None resolves via :func:`catalog_path`.

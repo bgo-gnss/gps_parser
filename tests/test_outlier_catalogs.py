@@ -117,6 +117,26 @@ def test_read_overrides_rejects_bad_window_order(tmp_path):
         oc.read_outlier_overrides(p)
 
 
+def test_read_overrides_method_and_running_sigma(tmp_path):
+    p = tmp_path / "outlier_overrides.csv"
+    p.write_text("sta,method,running_n_sigma\nSENG,running,5.5\nHOFN,model,\n")
+    cat = oc.read_outlier_overrides(p)
+    assert cat["SENG"].fields == {"method": "running", "running_n_sigma": 5.5}
+    assert cat["HOFN"].fields == {"method": "model"}
+
+
+@pytest.mark.parametrize(
+    ("row", "match"),
+    [("SENG,kalman,", "method"), ("SENG,,0", "running_n_sigma"),
+     ("SENG,,abc", "not a number")],
+)  # fmt: skip
+def test_read_overrides_rejects_bad_method_or_sigma(tmp_path, row, match):
+    p = tmp_path / "outlier_overrides.csv"
+    p.write_text("sta,method,running_n_sigma\n" + row + "\n")
+    with pytest.raises(ValueError, match=match):
+        oc.read_outlier_overrides(p)
+
+
 def test_read_overrides_rejects_negative_floor(tmp_path):
     p = tmp_path / "outlier_overrides.csv"
     p.write_text("sta,min_outlier_u\nSENG,-1\n")
